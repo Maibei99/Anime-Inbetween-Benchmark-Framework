@@ -133,7 +133,7 @@ for clean_triplet_dir in "$CLEAN_INPUTS_DIR"/*/; do
     python3 scripts/evaluation/inference.py \
         --seed "$SEED" \
         --ckpt_path "$CKPT_PATH" \
-        --config "$CONFIG_PATH" \
+        --config_path "$CONFIG_PATH" \
         --prompt_dir "$clean_triplet_dir" \
         --savedir "$video_output_dir" \
         --n_samples 1 --bs 1 --height 320 --width 512 \

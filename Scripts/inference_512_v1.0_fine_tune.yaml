@@ -1,0 +1,176 @@
+# ==============================================================================
+# CONFIGURACIÓN PARA FINE-TUNING DE TOONCRAFTER EN ANIME (OPTIMIZADO RTX 4090)
+# ==============================================================================
+# Este archivo adapta la configuración oficial de ToonCrafter para un fine-tuning
+# específico en un dataset de anime. Las modificaciones clave incluyen un learning
+# rate más bajo, la activación del entrenamiento para la proyección de imágenes
+# y optimizaciones de entrenamiento para tarjetas gráficas de alta gama.
+# ==============================================================================
+
+model:
+  # Define la clase principal del modelo de difusión latente.
+  target: lvdm.models.ddpm3d.LatentVisualDiffusion
+
+  # Ruta al checkpoint pre-entrenado oficial que sirve como punto de partida.
+  pretrained_checkpoint: "/ruta/a/checkpoints/tooncrafter_512_interp_v1/model.ckpt"
+
+  # Tasa de aprendizaje ajustada para fine-tuning.
+  # Es más conservadora (1.0e-06) que la oficial (1.0e-05) para evitar
+  # cambios drásticos en los pesos pre-entrenados y lograr una mejor adaptación.
+  base_learning_rate: 1.0e-06
+  scale_lr: False
+
+  params:
+    # --- Parámetros de Difusión y Condicionamiento ---
+    rescale_betas_zero_snr: True
+    parameterization: "v"
+    linear_start: 0.00085
+    linear_end: 0.012
+    timesteps: 1000
+
+    first_stage_key: video # La entrada principal es un video.
+    cond_stage_key: caption # El condicionamiento se basa en texto.
+    cond_stage_trainable: False # Mantenemos congelado el encoder de texto.
+
+    # CRÍTICO: Se activa el entrenamiento del proyector de imágenes.
+    # Esto es fundamental para que el modelo aprenda a interpretar las
+    # características visuales específicas del estilo anime.
+    image_proj_model_trainable: True
+
+    conditioning_key: hybrid # Usa tanto texto como imágenes para condicionar.
+    image_size: [32, 48] # Tamaño en el espacio latente para videos de 512x320.
+    channels: 4 # Canales en el espacio latente.
+    scale_factor: 0.18215 # Factor de escala del VAE.
+    use_ema: False # No se usa Exponential Moving Average en fine-tuning.
+
+    # --- Configuración UNet (Arquitectura principal) ---
+    unet_config:
+      target: lvdm.modules.networks.openaimodel3d.UNetModel
+      params:
+        in_channels: 8
+        out_channels: 4
+        model_channels: 320
+        attention_resolutions: [4, 2, 1]
+        num_res_blocks: 2
+        channel_mult: [1, 2, 4, 4]
+        dropout: 0.1
+        num_head_channels: 64
+        context_dim: 1024
+        use_checkpoint: True # Ahorra memoria VRAM a costa de un poco de cómputo.
+
+        # --- Módulos Temporales (se congelarán en el script de entrenamiento) ---
+        temporal_conv: True
+        temporal_attention: True
+
+        # --- Módulos Específicos de ToonCrafter ---
+        image_cross_attention: true # Permite el condicionamiento cruzado con imágenes.
+        default_fs: 10
+        fs_condition: true
+
+    # --- VAE (Codificador y Decodificador de Imágenes) ---
+    # Se mantiene la configuración oficial para consistencia.
+    first_stage_config:
+      target: lvdm.models.autoencoder.AutoencoderKL
+      params:
+        embed_dim: 4
+        monitor: val/rec_loss
+        ddconfig:
+          double_z: True
+          z_channels: 4
+          resolution: 256
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult: [1, 2, 4, 4]
+          num_res_blocks: 2
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+
+    # --- Encoders de Condicionamiento (CLIP) ---
+    # Se usan para traducir texto e imágenes a un formato que la UNet entiende.
+    cond_stage_config:
+      target: lvdm.modules.encoders.condition.FrozenOpenCLIPEmbedder
+      params:
+        freeze: true
+        layer: "penultimate"
+
+    img_cond_stage_config:
+      target: lvdm.modules.encoders.condition.FrozenOpenCLIPImageEmbedderV2
+      params:
+        freeze: true
+
+    # Proyector que adapta la salida del encoder de imagen para la cross-attention.
+    image_proj_stage_config:
+      target: lvdm.modules.encoders.resampler.Resampler
+      params:
+        dim: 1024
+        depth: 4
+        dim_head: 64
+        heads: 12
+        num_queries: 16
+        embedding_dim: 1280
+        output_dim: 1024
+        ff_mult: 4
+        video_length: 16
+
+# ==============================================================================
+# CONFIGURACIÓN DEL DATALOADER
+# ==============================================================================
+data:
+  # Apunta a tu clase de dataset personalizada.
+  target: main.custom_triplet_dataset.TripletDataModule
+  params:
+    # Batch size de 1 debido a la alta demanda de memoria VRAM.
+    batch_size: 1
+    num_workers: 2 # Número de hilos para cargar datos.
+
+    train:
+      params:
+        data_root: "/ruta/a/tu/proyecto/data/processed/train"
+        prompts_file: "/ruta/a/tu/proyecto/data/processed/prompts.txt"
+        video_length: 4
+        # ... otros parámetros de datos
+
+    validation:
+      target: custom_triplet_dataset.TripletAnimationDataset
+      params:
+        data_root: "/ruta/a/tu/proyecto/data/processed/validation"
+        prompts_file: "/ruta/a/tu/proyecto/data/processed/prompts.txt"
+        video_length: 4
+        # ... otros parámetros de datos
+
+# ==============================================================================
+# CONFIGURACIÓN DE PYTORCH LIGHTNING (OPTIMIZADO RTX 4090)
+# ==============================================================================
+lightning:
+  # 'bf16' (BFloat16) ofrece un excelente balance entre velocidad y precisión
+  # en GPUs de la serie 3000 y 4000 de NVIDIA.
+  precision: "bf16"
+
+  trainer:
+    benchmark: True # Permite a cuDNN encontrar los mejores algoritmos para tu hardware.
+
+    # Se aumenta la acumulación de gradientes a 4.
+    # Batch efectivo = (batch_size * accumulate_grad_batches * num_gpus) = 1 * 4 * 1 = 4.
+    # Esto simula un batch size mayor sin aumentar el uso de VRAM.
+    accumulate_grad_batches: 4
+
+    # Número máximo de pasos de entrenamiento. Reducido para fine-tuning.
+    max_steps: 10000
+
+    devices: 1 # Entrenar en una sola GPU.
+
+    # Frecuencia de logging y validación.
+    log_every_n_steps: 50
+    val_check_interval: 0.5 # Validar dos veces por época.
+
+  callbacks:
+    model_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        # Guardar checkpoints más frecuentemente durante el fine-tuning.
+        every_n_train_steps: 1000
+        filename: "tooncrafter-anime-ft-{epoch}-{step}"
+        save_weights_only: True
