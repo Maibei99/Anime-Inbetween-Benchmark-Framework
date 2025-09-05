@@ -1,0 +1,6 @@
+[submodule "models/external/ToonCrafter"]
+	path = models/external/ToonCrafter
+	url = https://github.com/Doubiiu/ToonCrafter.git
+[submodule "models/external/TPS-Inbetween"]
+	path = models/external/TPS-Inbetween
+	url = https://github.com/Tian-one/tps-inbetween.git
