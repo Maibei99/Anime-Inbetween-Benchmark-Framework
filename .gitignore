@@ -1,0 +1,22 @@
+# Entornos virtuales de Python
+venv/
+env/
+*.venv
+
+# Archivos compilados de Python
+__pycache__/
+*.pyc
+
+# Carpetas de datos (¡muy importante!)
+data/raw/
+data/processed/
+
+# Carpetas de resultados generados
+analysis/results/
+results*/
+
+# Archivos de configuración de IDEs
+.vscode/
+.idea/
+
+no_use/
