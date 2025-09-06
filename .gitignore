@@ -7,16 +7,16 @@ env/
 __pycache__/
 *.pyc
 
-# Carpetas de datos (¡muy importante!)
+# Carpetas de datos
 data/raw/
 data/processed/
+!data/raw/README.md
 
 # Carpetas de resultados generados
 analysis/results/
 results*/
 
 # Archivos de configuración de IDEs
-.vscode/
-.idea/
+.vscode/ 
 
 no_use/
